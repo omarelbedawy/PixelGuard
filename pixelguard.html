@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PixelGuard — Adversarial Image Shield</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #f4f4f3;          /* logo's off-white background */
+    --surface: #ffffff;
+    --surface-2: #f0f0ee;
+    --border: #dcdcda;
+    --text: #17181a;         /* near logo black */
+    --muted: #6c6c6c;
+    --shield: #6d0601;       /* brand red — protect / primary actions */
+    --shield-dim: #e3b9b6;
+    --break: #55565a;        /* brand steel-grey — "AI result looks broken/grey" */
+    --break-dim: #c9cacb;
+    --ok: #1f8a4c;           /* connection status only, not brand-decorative */
+    --font-display: 'Poppins', sans-serif;
+    --font-body: 'Poppins', sans-serif;
+    --font-mono: 'Poppins', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ink); color: var(--text);
+    font-family: var(--font-body);
+  }
+  .noise-strip {
+    height: 6px; width: 100%;
+    background-image: repeating-linear-gradient(90deg, var(--shield) 0 2px, transparent 2px 5px, var(--break) 5px 7px, transparent 7px 14px);
+    opacity: 0.65;
+  }
+  header.hero {
+    padding: 40px 24px 28px;
+    max-width: 920px; margin: 0 auto;
+    display: flex; align-items: center; gap: 20px;
+  }
+  header.hero img.logo { width: 64px; height: 64px; flex-shrink: 0; }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.14em;
+    color: var(--shield); text-transform: uppercase; display: flex; align-items: center; gap: 8px; font-weight: 600;
+  }
+  .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--shield); }
+  h1 {
+    font-family: var(--font-display); font-weight: 700; font-size: 2.4rem;
+    margin: 8px 0 6px; letter-spacing: -0.01em; color: var(--text);
+  }
+  h1 span { color: var(--shield); }
+  p.tagline { color: var(--muted); font-size: 1rem; max-width: 560px; line-height: 1.5; margin: 0; }
+
+  nav.tabs {
+    max-width: 920px; margin: 0 auto; padding: 0 24px;
+    display: flex; gap: 6px; border-bottom: 1px solid var(--border);
+  }
+  .tab-btn {
+    font-family: var(--font-mono); font-weight: 500; font-size: 0.85rem; letter-spacing: 0.02em;
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    padding: 12px 16px; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .tab-btn.active { color: var(--text); border-bottom-color: var(--shield); }
+  .tab-btn .idx { color: var(--shield); }
+
+  main { max-width: 920px; margin: 0 auto; padding: 28px 24px 60px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+
+  label.field-label {
+    font-family: var(--font-mono); font-weight: 500; font-size: 0.72rem; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.06em; display: block; margin: 18px 0 6px;
+  }
+  label.field-label:first-child { margin-top: 0; }
+  input[type=number], input[type=text] {
+    width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+    padding: 10px 12px; border-radius: 6px; font-family: var(--font-body); font-size: 0.9rem;
+  }
+  input[type=file] { font-family: var(--font-body); font-size: 0.85rem; color: var(--muted); width: 100%; }
+  input:focus { outline: 2px solid var(--shield); outline-offset: 1px; }
+
+  .upload-box {
+    border: 1px dashed var(--border); border-radius: 8px; padding: 16px; text-align: center;
+    color: var(--muted); font-size: 0.85rem; background: var(--surface-2);
+  }
+  img.preview {
+    max-width: 100%; border-radius: 8px; border: 1px solid var(--border); display: block; margin-top: 10px;
+  }
+
+  button.primary {
+    margin-top: 20px; background: var(--shield); color: #fff; border: none;
+    padding: 12px 22px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 0.92rem;
+    font-family: var(--font-body); width: 100%;
+  }
+  button.primary:hover { filter: brightness(1.12); }
+  button.primary:disabled { background: #c4c4c4; color: #8a8a8a; cursor: not-allowed; }
+  button.ghost {
+    background: none; border: 1px solid var(--border); color: var(--text);
+    padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; margin-top: 10px; margin-right: 8px;
+    font-family: var(--font-mono);
+  }
+  button.ghost:hover { border-color: var(--shield); color: var(--shield); }
+
+  .status-line {
+    font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); margin-top: 12px; min-height: 18px;
+  }
+  .status-line.err { color: var(--shield); }
+  .status-line.ok { color: var(--ok); }
+
+  .canvas-wrap { position: relative; display: inline-block; margin-top: 10px; }
+  .canvas-wrap canvas { position: absolute; top: 0; left: 0; border-radius: 8px; }
+  #baseCanvas { border: 1px solid var(--border); position: static; }
+  .canvas-wrap canvas.draw-layer { cursor: crosshair; }
+  .hint { font-size: 0.78rem; color: var(--muted); margin-top: 6px; }
+
+  /* Settings */
+  .settings-row { padding: 16px 0; border-bottom: 1px solid var(--border); }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-row-head { display: flex; align-items: center; justify-content: space-between; }
+  .engine-name { font-family: var(--font-display); font-weight: 600; font-size: 1rem; }
+  .conn-badge {
+    font-family: var(--font-mono); font-size: 0.7rem; padding: 3px 9px; border-radius: 20px;
+    display: flex; align-items: center; gap: 5px; border: 1px solid var(--border); color: var(--muted);
+  }
+  .conn-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+  .conn-badge.ok { color: var(--ok); border-color: var(--ok); }
+  .conn-badge.ok .dot { background: var(--ok); }
+  .conn-badge.err { color: var(--shield); border-color: var(--shield-dim); }
+  .conn-badge.err .dot { background: var(--shield); }
+  .settings-desc { color: var(--muted); font-size: 0.82rem; margin: 6px 0 10px; }
+
+  footer { text-align: center; color: var(--muted); font-family: var(--font-mono); font-size: 0.72rem; padding: 20px; }
+</style>
+</head>
+<body>
+
+<div class="noise-strip"></div>
+
+<header class="hero">
+  <img class="logo" src="logo.png" alt="PixelGuard logo">
+  <div>
+    <div class="eyebrow"><span class="dot"></span> ADVERSARIAL IMAGE PROTECTION</div>
+    <h1>Pixel<span>Guard</span></h1>
+    <p class="tagline">Injects noise invisible to people but disruptive to AI inpainting models — protecting images from unauthorized edits and misuse before they're published.</p>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="protect"><span class="idx">01</span> Protect</button>
+  <button class="tab-btn" data-tab="verify"><span class="idx">02</span> Verify</button>
+  <button class="tab-btn" data-tab="settings"><span class="idx">03</span> Settings</button>
+</nav>
+
+<main>
+  <!-- ============ TAB 1: PROTECT ============ -->
+  <div class="panel active" id="panel-protect">
+    <div class="card">
+      <div class="grid">
+        <div>
+          <label class="field-label">Source image</label>
+          <div class="upload-box">
+            <input type="file" id="immFile" accept="image/*">
+          </div>
+          <img id="immPreview" class="preview" style="display:none;">
+
+          <label class="field-label">Epsilon — noise strength</label>
+          <input type="number" id="immEps" value="0.02" step="0.01" min="0.01" max="0.2">
+
+          <label class="field-label">Iterations</label>
+          <input type="number" id="immIters" value="500" step="10" min="10" max="700">
+          <div class="hint">Stronger protection at higher values. Kept under ~700 to stay inside the engine's response window.</div>
+
+          <button class="primary" id="immBtn" onclick="runImmunize()">Apply Protection</button>
+          <div class="status-line" id="immStatus"></div>
+        </div>
+        <div>
+          <label class="field-label">Protected result</label>
+          <img id="immResult" class="preview" style="display:none;">
+          <div id="immActions" style="display:none;">
+            <button class="ghost" onclick="downloadImmResult()">⬇ Download</button>
+            <button class="ghost" onclick="useInTestTab()">→ Send to Verify</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TAB 2: VERIFY ============ -->
+  <div class="panel" id="panel-verify">
+    <div class="card">
+      <div class="grid">
+        <div>
+          <label class="field-label">Protected image</label>
+          <div class="upload-box">
+            <input type="file" id="testFile" accept="image/*" onchange="loadTestImage(this.files[0])">
+          </div>
+          <div class="canvas-wrap" id="canvasWrap" style="display:none;">
+            <canvas id="baseCanvas" width="512" height="512"></canvas>
+            <canvas id="maskCanvas" class="draw-layer" width="512" height="512"></canvas>
+          </div>
+          <div class="hint" id="drawHint" style="display:none;">Click and drag over the area you want the AI to edit.</div>
+          <button class="ghost" id="clearMaskBtn" style="display:none;" onclick="clearMask()">Clear mask</button>
+
+          <label class="field-label">Edit prompt</label>
+          <input type="text" id="testPrompt" placeholder="e.g. cat sitting in a garden with sunshine">
+
+          <button class="primary" id="testBtn" onclick="runTest()">Test AI Inpainting</button>
+          <div class="status-line" id="testStatus"></div>
+        </div>
+        <div>
+          <label class="field-label">AI attempt result</label>
+          <img id="testResult" class="preview" style="display:none;">
+          <div class="hint">A successful shield shows as broken, grey, or distorted output here.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TAB 3: SETTINGS ============ -->
+  <div class="panel" id="panel-settings">
+    <div class="card">
+      <div class="settings-row">
+        <div class="settings-row-head">
+          <div class="engine-name">Protection engine</div>
+          <div class="conn-badge" id="badgeImm"><span class="dot"></span><span class="badge-text">unchecked</span></div>
+        </div>
+        <div class="settings-desc">Runs the PGD noise-injection pass. Used by the Protect tab.</div>
+        <input type="text" id="cfgImmUrl" value="https://pixelguardteam--pixelguard-immunize.modal.run">
+        <button class="ghost" onclick="checkConnection('immunize')">Test connection</button>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-head">
+          <div class="engine-name">Verification engine</div>
+          <div class="conn-badge" id="badgeTest"><span class="dot"></span><span class="badge-text">unchecked</span></div>
+        </div>
+        <div class="settings-desc">Runs live Stable Diffusion inpainting on GPU. Used by the Verify tab.</div>
+        <input type="text" id="cfgTestUrl" value="https://pixelguardteam--pixelguard-test-inpaint.modal.run">
+        <button class="ghost" onclick="checkConnection('test')">Test connection</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>PixelGuard — protection runs client-side to server, no images are stored.</footer>
+
+<script>
+// ---------- Tabs ----------
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
+  });
+});
+
+// ---------- Helpers ----------
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+function setStatus(id, text, cls) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = "status-line" + (cls ? " " + cls : "");
+}
+
+async function fetchWithRetry(url, options, statusId, retryMsg) {
+  try {
+    const res = await fetch(url, options);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res;
+  } catch (err) {
+    if (statusId) setStatus(statusId, retryMsg || "First attempt hit a cold-start hiccup, retrying...");
+    await new Promise(r => setTimeout(r, 3000));
+    const res2 = await fetch(url, options);
+    if (!res2.ok) throw new Error(`HTTP ${res2.status}`);
+    return res2;
+  }
+}
+
+// ---------- Settings: connection check ----------
+async function checkConnection(which) {
+  const url = which === "immunize" ? document.getElementById("cfgImmUrl").value : document.getElementById("cfgTestUrl").value;
+  const badge = document.getElementById(which === "immunize" ? "badgeImm" : "badgeTest");
+  badge.className = "conn-badge";
+  badge.querySelector(".badge-text").textContent = "checking...";
+  try {
+    const res = await fetch(url, { method: "OPTIONS" });
+    if (res.ok) {
+      badge.className = "conn-badge ok";
+      badge.querySelector(".badge-text").textContent = "online";
+    } else {
+      throw new Error("bad status");
+    }
+  } catch (e) {
+    badge.className = "conn-badge err";
+    badge.querySelector(".badge-text").textContent = "unreachable";
+  }
+}
+
+// ---------- TAB 1: Immunize ----------
+document.getElementById("immFile").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const img = document.getElementById("immPreview");
+  img.src = URL.createObjectURL(file);
+  img.style.display = "block";
+});
+
+let lastImmResultB64 = null;
+
+async function runImmunize() {
+  const file = document.getElementById("immFile").files[0];
+  if (!file) { setStatus("immStatus", "Pick an image first.", "err"); return; }
+
+  const btn = document.getElementById("immBtn");
+  btn.disabled = true;
+  setStatus("immStatus", "Protecting image... cold start can take up to ~60s.");
+
+  const imageBase64 = await fileToBase64(file);
+  const eps = parseFloat(document.getElementById("immEps").value);
+  const iters = parseInt(document.getElementById("immIters").value);
+  const url = document.getElementById("cfgImmUrl").value;
+
+  try {
+    const res = await fetchWithRetry(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_base64: imageBase64, eps, iters }),
+    }, "immStatus");
+    const data = await res.json();
+    lastImmResultB64 = data.image_base64;
+
+    const resImg = document.getElementById("immResult");
+    resImg.src = "data:image/png;base64," + data.image_base64;
+    resImg.style.display = "block";
+    document.getElementById("immActions").style.display = "block";
+
+    setStatus("immStatus", `Done — ${data.iters_used} iterations applied.`, "ok");
+  } catch (err) {
+    setStatus("immStatus", "Engine unreachable — it may be resting or out of credit. Check Settings.", "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function downloadImmResult() {
+  if (!lastImmResultB64) return;
+  const a = document.createElement("a");
+  a.href = "data:image/png;base64," + lastImmResultB64;
+  a.download = "pixelguard_protected.png";
+  a.click();
+}
+
+function useInTestTab() {
+  if (!lastImmResultB64) return;
+  document.querySelector('.tab-btn[data-tab="verify"]').click();
+  loadTestImageFromBase64(lastImmResultB64);
+}
+
+// ---------- TAB 2: Verify (mask drawing) ----------
+const baseCanvas = document.getElementById("baseCanvas");
+const maskCanvas = document.getElementById("maskCanvas");
+const baseCtx = baseCanvas.getContext("2d");
+const maskCtx = maskCanvas.getContext("2d");
+let drawing = false;
+
+let rawMaskCanvas = document.createElement("canvas");
+rawMaskCanvas.width = 512; rawMaskCanvas.height = 512;
+let rawMaskCtx = rawMaskCanvas.getContext("2d");
+
+function resetRawMask() {
+  rawMaskCtx.fillStyle = "black";
+  rawMaskCtx.fillRect(0, 0, 512, 512);
+}
+resetRawMask();
+
+function renderMaskOverlay() {
+  maskCtx.clearRect(0, 0, 512, 512);
+  maskCtx.globalAlpha = 0.45;
+  maskCtx.drawImage(rawMaskCanvas, 0, 0);
+  maskCtx.globalAlpha = 1.0;
+}
+
+function getPos(evt) {
+  const rect = maskCanvas.getBoundingClientRect();
+  const scaleX = maskCanvas.width / rect.width;
+  const scaleY = maskCanvas.height / rect.height;
+  const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+  const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+  return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+}
+
+function drawDot(x, y) {
+  rawMaskCtx.fillStyle = "white";
+  rawMaskCtx.beginPath();
+  rawMaskCtx.arc(x, y, 18, 0, Math.PI * 2);
+  rawMaskCtx.fill();
+  renderMaskOverlay();
+}
+
+["mousedown","touchstart"].forEach(evt => maskCanvas.addEventListener(evt, (e) => {
+  drawing = true; drawDot(getPos(e).x, getPos(e).y); e.preventDefault();
+}));
+["mousemove","touchmove"].forEach(evt => maskCanvas.addEventListener(evt, (e) => {
+  if (!drawing) return;
+  const p = getPos(e); drawDot(p.x, p.y); e.preventDefault();
+}));
+["mouseup","mouseleave","touchend"].forEach(evt => maskCanvas.addEventListener(evt, () => drawing = false));
+
+function clearMask() { resetRawMask(); renderMaskOverlay(); }
+
+function loadTestImageFromBase64(b64) {
+  const img = new Image();
+  img.onload = () => {
+    baseCtx.clearRect(0, 0, 512, 512);
+    baseCtx.drawImage(img, 0, 0, 512, 512);
+    resetRawMask();
+    renderMaskOverlay();
+    document.getElementById("canvasWrap").style.display = "inline-block";
+    document.getElementById("drawHint").style.display = "block";
+    document.getElementById("clearMaskBtn").style.display = "inline-block";
+  };
+  img.src = "data:image/png;base64," + b64;
+}
+
+async function loadTestImage(file) {
+  if (!file) return;
+  loadTestImageFromBase64(await fileToBase64(file));
+}
+
+async function runTest() {
+  const prompt = document.getElementById("testPrompt").value.trim();
+  if (!prompt) { setStatus("testStatus", "Type a prompt first.", "err"); return; }
+  if (document.getElementById("canvasWrap").style.display === "none") {
+    setStatus("testStatus", "Upload an image first.", "err"); return;
+  }
+
+  const btn = document.getElementById("testBtn");
+  btn.disabled = true;
+  setStatus("testStatus", "Running live AI edit... cold start can take ~20-40s.");
+
+  const baseB64 = baseCanvas.toDataURL("image/png").split(",")[1];
+  const maskB64 = rawMaskCanvas.toDataURL("image/png").split(",")[1];
+  const url = document.getElementById("cfgTestUrl").value;
+
+  try {
+    const res = await fetchWithRetry(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_base64: baseB64, mask_base64: maskB64, prompt }),
+    }, "testStatus");
+    const data = await res.json();
+    const resImg = document.getElementById("testResult");
+    resImg.src = "data:image/png;base64," + data.image_base64;
+    resImg.style.display = "block";
+    setStatus("testStatus", "Done.", "ok");
+  } catch (err) {
+    setStatus("testStatus", "Engine unreachable — it may be resting or out of credit. Check Settings.", "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
