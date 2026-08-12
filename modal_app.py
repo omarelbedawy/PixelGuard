@@ -109,6 +109,33 @@ def _get_pipe():
 # ============================================================
 # CORE PGD LOGIC — same precision-split trick as the Colab script
 # ============================================================
+def _letterbox_to_square(image, size=512):
+    """Scale to fit inside size x size preserving aspect ratio, pad with
+    neutral grey to make it square. Returns (square_image, offset, content_size, original_size)."""
+    from PIL import Image
+
+    resample = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+    w, h = image.size
+    scale = size / max(w, h)
+    new_w, new_h = max(1, round(w * scale)), max(1, round(h * scale))
+    resized = image.resize((new_w, new_h), resample)
+    canvas = Image.new("RGB", (size, size), (127, 127, 127))
+    offset = ((size - new_w) // 2, (size - new_h) // 2)
+    canvas.paste(resized, offset)
+    return canvas, offset, (new_w, new_h), (w, h)
+
+
+def _unletterbox(square_image, offset, content_size, original_size):
+    """Reverse of _letterbox_to_square: crop off the padding, resize back to original dimensions."""
+    from PIL import Image
+
+    resample = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+    x, y = offset
+    cw, ch = content_size
+    cropped = square_image.crop((x, y, x + cw, y + ch))
+    return cropped.resize(original_size, resample)
+
+
 def _run_immunize(image_bytes: bytes, eps: float, iters: int):
     import gc
 
@@ -120,7 +147,8 @@ def _run_immunize(image_bytes: bytes, eps: float, iters: int):
     vae, latent_dtype = _get_vae()
     device = next(vae.parameters()).device
 
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB").resize((512, 512))
+    original = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    image, offset, content_size, original_size = _letterbox_to_square(original, 512)
     eps_scaled = float(eps) * 2.0
     alpha = 0.01
     iters = min(int(iters), 1000)
@@ -147,8 +175,9 @@ def _run_immunize(image_bytes: bytes, eps: float, iters: int):
             X_adv_f32 = torch.min(torch.max(X_adv_f32, X_f32 - eps_scaled), X_f32 + eps_scaled)
             X_adv_f32 = torch.clamp(X_adv_f32, -1.0, 1.0).detach()
 
-    final = (X_adv_f32 / 2.0 + 0.5).clamp(0, 1).squeeze(0).cpu()
-    out_img = T.ToPILImage()(final)
+    final_square = (X_adv_f32 / 2.0 + 0.5).clamp(0, 1).squeeze(0).cpu()
+    out_img_square = T.ToPILImage()(final_square)
+    out_img = _unletterbox(out_img_square, offset, content_size, original_size)
 
     buf = io.BytesIO()
     out_img.save(buf, format="PNG")
@@ -188,12 +217,16 @@ def immunize():
 
     @web_app.post("/")
     async def _immunize(request: Request):
-        payload = await request.json()
-        image_bytes = base64.b64decode(payload["image_base64"])
-        eps = payload.get("eps", 0.02)
-        iters = payload.get("iters", 500)
-        result_b64, used = _run_immunize(image_bytes, eps, iters)
-        return {"image_base64": result_b64, "iters_used": used}
+        from fastapi.responses import JSONResponse
+        try:
+            payload = await request.json()
+            image_bytes = base64.b64decode(payload["image_base64"])
+            eps = payload.get("eps", 0.02)
+            iters = payload.get("iters", 500)
+            result_b64, used = _run_immunize(image_bytes, eps, iters)
+            return {"image_base64": result_b64, "iters_used": used}
+        except Exception as e:
+            return JSONResponse(status_code=500, content={"error": str(e)})
 
     return web_app
 
@@ -212,29 +245,38 @@ def test_inpaint():
     async def _test_inpaint(request: Request):
         import torch
         from PIL import Image
+        from fastapi.responses import JSONResponse
 
-        payload = await request.json()
-        pipe = _get_pipe()
-        base_image = Image.open(
-            io.BytesIO(base64.b64decode(payload["image_base64"]))
-        ).convert("RGB").resize((512, 512))
-        mask_image = Image.open(
-            io.BytesIO(base64.b64decode(payload["mask_base64"]))
-        ).convert("RGB").resize((512, 512))
-        prompt = payload.get("prompt", "")
+        try:
+            payload = await request.json()
+            pipe = _get_pipe()
+            base_original = Image.open(
+                io.BytesIO(base64.b64decode(payload["image_base64"]))
+            ).convert("RGB")
+            mask_original = Image.open(
+                io.BytesIO(base64.b64decode(payload["mask_base64"]))
+            ).convert("RGB")
+            base_image, offset, content_size, original_size = _letterbox_to_square(base_original, 512)
+            mask_resized = mask_original.resize(content_size, getattr(getattr(Image, "Resampling", Image), "LANCZOS"))
+            mask_canvas = Image.new("RGB", (512, 512), (0, 0, 0))
+            mask_canvas.paste(mask_resized, offset)
+            mask_image = mask_canvas
+            prompt = payload.get("prompt", "")
 
-        generator = torch.Generator(device="cuda").manual_seed(42)
-        result = pipe(
-            prompt=prompt,
-            image=base_image,
-            mask_image=mask_image,
-            num_inference_steps=20,
-            generator=generator,
-        ).images[0]
+            generator = torch.Generator(device="cuda").manual_seed(42)
+            result = pipe(
+                prompt=prompt,
+                image=base_image,
+                mask_image=mask_image,
+                num_inference_steps=20,
+                generator=generator,
+            ).images[0]
 
-        buf = io.BytesIO()
-        result.save(buf, format="PNG")
-        result_b64 = base64.b64encode(buf.getvalue()).decode()
-        return {"image_base64": result_b64}
+            buf = io.BytesIO()
+            result.save(buf, format="PNG")
+            result_b64 = base64.b64encode(buf.getvalue()).decode()
+            return {"image_base64": result_b64}
+        except Exception as e:
+            return JSONResponse(status_code=500, content={"error": str(e)})
 
     return web_app
