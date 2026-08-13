@@ -261,7 +261,7 @@
           <div class="conn-badge" id="badgeImm"><span class="dot"></span><span class="badge-text">unchecked</span></div>
         </div>
         <div class="settings-desc">Runs the PGD noise-injection pass. Used by the Protect tab.</div>
-        <input type="text" id="cfgImmUrl" value="https://pixelguardteam--pixelguard-immunize.modal.run">
+<input type="text" id="cfgImmUrl">
         <button class="ghost" onclick="checkConnection('immunize')">Test connection</button>
       </div>
       <div class="settings-row">
@@ -270,17 +270,19 @@
           <div class="conn-badge" id="badgeTest"><span class="dot"></span><span class="badge-text">unchecked</span></div>
         </div>
         <div class="settings-desc">Runs live Stable Diffusion inpainting on GPU. Used by the Verify tab.</div>
-        <input type="text" id="cfgTestUrl" value="https://pixelguardteam--pixelguard-test-inpaint.modal.run">
-        <button class="ghost" onclick="checkConnection('test')">Test connection</button>
+<input type="text" id="cfgTestUrl">        <button class="ghost" onclick="checkConnection('test')">Test connection</button>
       </div>
     </div>
   </div>
 </main>
 
 <footer>PixelGuard — protection runs client-side to server, no images are stored.</footer>
+<script src="config.js"></script>
 
 <script>
 // ---------- Tabs ----------
+document.getElementById("cfgImmUrl").value = PIXELGUARD_CONFIG.immunizeUrl;
+document.getElementById("cfgTestUrl").value = PIXELGUARD_CONFIG.testInpaintUrl;
 document.querySelectorAll(".tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
