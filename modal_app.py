@@ -156,8 +156,9 @@ def _run_immunize(image_bytes: bytes, eps: float, iters: int):
     transform = T.Compose([T.ToTensor()])
     X_f32 = transform(image).unsqueeze(0).to(device, dtype=torch.float32) * 2.0 - 1.0
     X_adv_f32 = X_f32.clone().detach()
-    target_latent = torch.zeros((1, 4, 64, 64), device=device, dtype=latent_dtype)
-
+    gray_tensor = torch.full((1, 3, 512, 512), 0.0, device=device, dtype=torch.float32) # 0.0 = رصاصي محايد
+    with torch.no_grad():
+        target_latent = vae.encode(gray_tensor.to(latent_dtype)).latent_dist.mean
     for _ in range(iters):
         # fp16 copy ONLY for the VAE forward pass (fast on GPU tensor cores)
         X_adv_f16 = X_adv_f32.to(latent_dtype).detach()
