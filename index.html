@@ -205,10 +205,10 @@
           <label class="field-label">Iterations</label>
           <div class="stepper">
             <button type="button" class="step-btn" onclick="stepValue('immIters',-50,10,0)">−</button>
-            <input type="number" id="immIters" value="350" step="10" min="10" max="600">
+            <input type="number" id="immIters" value="350" step="10" min="10" max="1000">
             <button type="button" class="step-btn" onclick="stepValue('immIters',50,10,0)">+</button>
           </div>
-          <div class="hint">Standard values: 150 (fast) · 350 (default) · 600 (max, still safe on cold start)</div>
+          <div class="hint">Standard values: 150 (fast) · 350 (default) · 1000 (max)</div>
 
           <button class="primary" id="immBtn" onclick="runImmunize()">Apply Protection</button>
           <div class="status-line" id="immStatus"><span class="spinner" id="immSpinner"></span><span class="status-text"></span></div>
