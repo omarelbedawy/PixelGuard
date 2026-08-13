@@ -206,27 +206,52 @@ def _make_cors_app():
 
 
 # ============================================================
-# ENDPOINT 1: IMMUNIZE — now on GPU, CORS-enabled
+# ENDPOINT 1: IMMUNIZE — spawn+poll pattern (avoids the 150s
+# redirect entirely: /start returns instantly, /result/{id} is
+# polled by the client and is always fast, so CORS never breaks)
 # ============================================================
 @app.function(image=vae_image, gpu="T4", timeout=300)
+def _immunize_job(image_bytes: bytes, eps: float, iters: int):
+    return _run_immunize(image_bytes, eps, iters)
+
+
+@app.function(image=vae_image, cpu=1, timeout=60)
 @modal.asgi_app()
 def immunize():
     from fastapi import Request
+    from fastapi.responses import JSONResponse
 
     web_app = _make_cors_app()
 
-    @web_app.post("/")
-    async def _immunize(request: Request):
-        from fastapi.responses import JSONResponse
+    @web_app.get("/")
+    async def _health():
+        return {"status": "ok", "engine": "immunize"}
+
+    @web_app.post("/start")
+    async def _start(request: Request):
         try:
             payload = await request.json()
             image_bytes = base64.b64decode(payload["image_base64"])
             eps = payload.get("eps", 0.02)
             iters = payload.get("iters", 500)
-            result_b64, used = _run_immunize(image_bytes, eps, iters)
-            return {"image_base64": result_b64, "iters_used": used}
+            call = _immunize_job.spawn(image_bytes, eps, iters)
+            return {"call_id": call.object_id}
         except Exception as e:
             return JSONResponse(status_code=500, content={"error": str(e)})
+
+    @web_app.get("/result/{call_id}")
+    async def _result(call_id: str):
+        try:
+            function_call = modal.FunctionCall.from_id(call_id)
+            try:
+                result_b64, used = function_call.get(timeout=0)
+                return {"status": "done", "image_base64": result_b64, "iters_used": used}
+            except TimeoutError:
+                return {"status": "pending"}
+        except Exception as e:
+            return JSONResponse(status_code=500, content={"error": str(e)})
+
+    return web_app
 
     return web_app
 

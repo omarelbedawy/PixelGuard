@@ -4,11 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PixelGuard — Adversarial Image Shield</title>
-<link rel="icon" type="image/png" href="/favicon/favicon-96x96.png" sizes="96x96" />
-<link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg" />
-<link rel="shortcut icon" href="/favicon/favicon.ico" />
-<link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
-<link rel="manifest" href="/favicon/site.webmanifest" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -144,6 +139,23 @@
   .settings-desc { color: var(--muted); font-size: 0.82rem; margin: 6px 0 10px; }
 
   footer { text-align: center; color: var(--muted); font-family: var(--font-mono); font-size: 0.72rem; padding: 20px; }
+
+  .spinner {
+    display: none; width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid var(--border); border-top-color: var(--shield);
+    animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle;
+  }
+  .spinner.show { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .status-line { display: flex; align-items: center; }
+
+  .stepper { display: flex; align-items: center; gap: 6px; }
+  .stepper input { text-align: center; }
+  .step-btn {
+    width: 34px; height: 38px; flex-shrink: 0; border: 1px solid var(--border); background: var(--surface-2);
+    color: var(--text); font-size: 1.1rem; border-radius: 6px; cursor: pointer; font-family: var(--font-body);
+  }
+  .step-btn:hover { border-color: var(--shield); color: var(--shield); }
 </style>
 </head>
 <body>
@@ -178,14 +190,23 @@
           <img id="immPreview" class="preview" style="display:none;">
 
           <label class="field-label">Epsilon — noise strength</label>
-          <input type="number" id="immEps" value="0.02" step="0.01" min="0.01" max="0.2">
+          <div class="stepper">
+            <button type="button" class="step-btn" onclick="stepValue('immEps',-0.01,0.01,2)">−</button>
+            <input type="number" id="immEps" value="0.02" step="0.01" min="0.01" max="0.2">
+            <button type="button" class="step-btn" onclick="stepValue('immEps',0.01,0.01,2)">+</button>
+          </div>
+          <div class="hint">Standard values: 0.01 (subtle) · 0.02 (default) · 0.05 (strong)</div>
 
           <label class="field-label">Iterations</label>
-          <input type="number" id="immIters" value="500" step="10" min="10" max="700">
-          <div class="hint">Stronger protection at higher values. Kept under ~700 to stay inside the engine's response window.</div>
+          <div class="stepper">
+            <button type="button" class="step-btn" onclick="stepValue('immIters',-50,10,0)">−</button>
+            <input type="number" id="immIters" value="350" step="10" min="10" max="600">
+            <button type="button" class="step-btn" onclick="stepValue('immIters',50,10,0)">+</button>
+          </div>
+          <div class="hint">Standard values: 150 (fast) · 350 (default) · 600 (max, still safe on cold start)</div>
 
           <button class="primary" id="immBtn" onclick="runImmunize()">Apply Protection</button>
-          <div class="status-line" id="immStatus"></div>
+          <div class="status-line" id="immStatus"><span class="spinner" id="immSpinner"></span><span class="status-text"></span></div>
         </div>
         <div>
           <label class="field-label">Protected result</label>
@@ -219,11 +240,12 @@
           <input type="text" id="testPrompt" placeholder="e.g. cat sitting in a garden with sunshine">
 
           <button class="primary" id="testBtn" onclick="runTest()">Test AI Inpainting</button>
-          <div class="status-line" id="testStatus"></div>
+          <div class="status-line" id="testStatus"><span class="spinner" id="testSpinner"></span><span class="status-text"></span></div>
         </div>
         <div>
           <label class="field-label">AI attempt result</label>
           <img id="testResult" class="preview" style="display:none;">
+          <button class="ghost" id="testDownload" style="display:none;" onclick="downloadTestResult()">⬇ Download</button>
           <div class="hint">A successful shield shows as broken, grey, or distorted output here.</div>
         </div>
       </div>
@@ -277,10 +299,24 @@ function fileToBase64(file) {
     reader.readAsDataURL(file);
   });
 }
+function stepValue(id, delta, step, decimals) {
+  const el = document.getElementById(id);
+  let v = parseFloat(el.value) + delta;
+  const min = parseFloat(el.min), max = parseFloat(el.max);
+  if (v < min) v = min;
+  if (v > max) v = max;
+  el.value = decimals > 0 ? v.toFixed(decimals) : Math.round(v);
+}
+
 function setStatus(id, text, cls) {
   const el = document.getElementById(id);
-  el.textContent = text;
+  const textEl = el.querySelector(".status-text");
+  if (textEl) textEl.textContent = text; else el.textContent = text;
   el.className = "status-line" + (cls ? " " + cls : "");
+}
+function showSpinner(id, on) {
+  const el = document.getElementById(id);
+  if (el) el.className = "spinner" + (on ? " show" : "");
 }
 
 async function fetchWithRetry(url, options, statusId, retryMsg) {
@@ -327,6 +363,23 @@ document.getElementById("immFile").addEventListener("change", (e) => {
 });
 
 let lastImmResultB64 = null;
+let lastTestResultB64 = null;
+
+async function pollForResult(baseUrl, callId, statusId, onTick) {
+  const resultUrl = `${baseUrl}/result/${callId}`;
+  const start = Date.now();
+  while (true) {
+    const res = await fetch(resultUrl);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.status === "done") return data;
+    if (data.error) throw new Error(data.error);
+    const elapsed = Math.round((Date.now() - start) / 1000);
+    if (onTick) onTick(elapsed);
+    if (elapsed > 240) throw new Error("Timed out waiting for a result.");
+    await new Promise(r => setTimeout(r, 2000));
+  }
+}
 
 async function runImmunize() {
   const file = document.getElementById("immFile").files[0];
@@ -334,7 +387,8 @@ async function runImmunize() {
 
   const btn = document.getElementById("immBtn");
   btn.disabled = true;
-  setStatus("immStatus", "Protecting image... cold start can take up to ~60s.");
+  showSpinner("immSpinner", true);
+  setStatus("immStatus", "Starting up the protection engine...");
 
   const imageBase64 = await fileToBase64(file);
   const eps = parseFloat(document.getElementById("immEps").value);
@@ -342,12 +396,16 @@ async function runImmunize() {
   const url = document.getElementById("cfgImmUrl").value;
 
   try {
-    const res = await fetchWithRetry(url, {
+    const startRes = await fetchWithRetry(`${url}/start`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ image_base64: imageBase64, eps, iters }),
     }, "immStatus");
-    const data = await res.json();
+    const { call_id } = await startRes.json();
+
+    const data = await pollForResult(url, call_id, "immStatus", (elapsed) => {
+      setStatus("immStatus", `Applying protection... ${elapsed}s elapsed (first run of the day can take up to a minute).`);
+    });
     lastImmResultB64 = data.image_base64;
 
     const resImg = document.getElementById("immResult");
@@ -360,6 +418,7 @@ async function runImmunize() {
     setStatus("immStatus", "Engine unreachable — it may be resting or out of credit. Check Settings.", "err");
   } finally {
     btn.disabled = false;
+    showSpinner("immSpinner", false);
   }
 }
 
@@ -432,8 +491,14 @@ function clearMask() { resetRawMask(); renderMaskOverlay(); }
 function loadTestImageFromBase64(b64) {
   const img = new Image();
   img.onload = () => {
-    baseCtx.clearRect(0, 0, 512, 512);
-    baseCtx.drawImage(img, 0, 0, 512, 512);
+    baseCtx.fillStyle = "#7f7f7f";
+    baseCtx.fillRect(0, 0, 512, 512);
+    const scale = Math.min(512 / img.width, 512 / img.height);
+    const w = Math.round(img.width * scale);
+    const h = Math.round(img.height * scale);
+    const ox = Math.round((512 - w) / 2);
+    const oy = Math.round((512 - h) / 2);
+    baseCtx.drawImage(img, ox, oy, w, h);
     resetRawMask();
     renderMaskOverlay();
     document.getElementById("canvasWrap").style.display = "inline-block";
@@ -457,7 +522,8 @@ async function runTest() {
 
   const btn = document.getElementById("testBtn");
   btn.disabled = true;
-  setStatus("testStatus", "Running live AI edit... cold start can take ~20-40s.");
+  showSpinner("testSpinner", true);
+  setStatus("testStatus", "Sending the masked area to the AI model — this usually takes 20-40 seconds, longer if the engine has been idle.");
 
   const baseB64 = baseCanvas.toDataURL("image/png").split(",")[1];
   const maskB64 = rawMaskCanvas.toDataURL("image/png").split(",")[1];
@@ -473,12 +539,23 @@ async function runTest() {
     const resImg = document.getElementById("testResult");
     resImg.src = "data:image/png;base64," + data.image_base64;
     resImg.style.display = "block";
+    lastTestResultB64 = data.image_base64;
+    document.getElementById("testDownload").style.display = "inline-block";
     setStatus("testStatus", "Done.", "ok");
   } catch (err) {
     setStatus("testStatus", "Engine unreachable — it may be resting or out of credit. Check Settings.", "err");
   } finally {
     btn.disabled = false;
+    showSpinner("testSpinner", false);
   }
+}
+
+function downloadTestResult() {
+  if (!lastTestResultB64) return;
+  const a = document.createElement("a");
+  a.href = "data:image/png;base64," + lastTestResultB64;
+  a.download = "pixelguard_ai_test_result.png";
+  a.click();
 }
 </script>
 </body>
