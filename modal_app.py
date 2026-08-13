@@ -138,7 +138,6 @@ def _unletterbox(square_image, offset, content_size, original_size):
 
 def _run_immunize(image_bytes: bytes, eps: float, iters: int):
     import gc
-
     import torch
     import torch.nn as nn
     import torchvision.transforms as T
@@ -149,6 +148,11 @@ def _run_immunize(image_bytes: bytes, eps: float, iters: int):
 
     original = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     image, offset, content_size, original_size = _letterbox_to_square(original, 512)
+
+    # 1. إجبار eps تكون 0.12 (قيمة MIT القوية) لو كانت القيمة جاية صغيرة أو افتراضية
+    if eps <= 0.05:
+        eps = 0.12
+
     eps_scaled = float(eps) * 2.0
     alpha = 0.01
     iters = min(int(iters), 1000)
@@ -156,9 +160,14 @@ def _run_immunize(image_bytes: bytes, eps: float, iters: int):
     transform = T.Compose([T.ToTensor()])
     X_f32 = transform(image).unsqueeze(0).to(device, dtype=torch.float32) * 2.0 - 1.0
     X_adv_f32 = X_f32.clone().detach()
-    gray_tensor = torch.full((1, 3, 512, 512), 0.0, device=device, dtype=torch.float32) # 0.0 = رصاصي محايد
+
+    # 2. إنشاء صورة رمادية موحدة (Neutral Gray: RGB 128 -> 0.0 in range [-1, 1])
+    # وحساب الـ Target Latent بتاعها من الـ VAE مباشرة زي طريقة MIT
+    gray_image_tensor = torch.zeros((1, 3, 512, 512), device=device, dtype=latent_dtype)
     with torch.no_grad():
-        target_latent = vae.encode(gray_tensor.to(latent_dtype)).latent_dist.mean
+        target_latent = vae.encode(gray_image_tensor).latent_dist.mean
+
+    # 3. حلقة الـ PGD Attack
     for _ in range(iters):
         # fp16 copy ONLY for the VAE forward pass (fast on GPU tensor cores)
         X_adv_f16 = X_adv_f32.to(latent_dtype).detach()
@@ -190,7 +199,6 @@ def _run_immunize(image_bytes: bytes, eps: float, iters: int):
         torch.cuda.empty_cache()
 
     return result_b64, iters
-
 
 def _make_cors_app():
     from fastapi import FastAPI
@@ -233,7 +241,7 @@ def immunize():
         try:
             payload = await request.json()
             image_bytes = base64.b64decode(payload["image_base64"])
-            eps = payload.get("eps", 0.02)
+            eps = payload.get("eps", 0.0)
             iters = payload.get("iters", 500)
             call = _immunize_job.spawn(image_bytes, eps, iters)
             return {"call_id": call.object_id}
