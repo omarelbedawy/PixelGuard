@@ -9,7 +9,7 @@
 
 2. **Authenticate the new account**
    ```powershell
-   modal setup
+   python -m modal setup
    ```
    This opens the browser for the new account's login. Modal stores
    each account as a separate "profile" in `~/.modal.toml`, so this
